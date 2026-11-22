@@ -1,3 +1,4 @@
 __pycache__/
 test_build.html
 .DS_Store
+.claude/

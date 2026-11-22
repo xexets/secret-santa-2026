@@ -120,6 +120,10 @@ async function receiverFor(giver) {
 
 $("login-form").addEventListener("submit", async e => {
   e.preventDefault();
+  if (!window.crypto || !crypto.subtle) {
+    $("login-err").textContent = "This browser can't open the draw. Please open the https:// link in an up-to-date browser.";
+    return;
+  }
   $("login-btn").disabled = true; $("login-err").textContent = "Checking…";
   try {
     hmacKey = await unlock($("pw").value);
