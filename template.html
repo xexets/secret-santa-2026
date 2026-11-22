@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Secret Santa 2026</title>
+<style>
+  :root { --red:#b3202a; --green:#1f6b45; --cream:#fff8ec; --gold:#e0b64a; }
+  * { box-sizing: border-box; }
+  body {
+    margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+    font-family: Georgia, "Times New Roman", serif; color:#2b1d14;
+    background: radial-gradient(circle at 50% 0%, #2f7d55 0%, #123d29 70%);
+    padding: 24px;
+  }
+  .snow { position:fixed; inset:0; pointer-events:none; overflow:hidden; }
+  .snow span { position:absolute; top:-10px; color:#fff; opacity:.7; animation: fall linear infinite; }
+  @keyframes fall { to { transform: translateY(110vh) rotate(360deg); } }
+  .card {
+    position:relative; width:100%; max-width:440px; background:var(--cream);
+    border-radius:18px; padding:32px 28px; text-align:center;
+    box-shadow: 0 20px 50px rgba(0,0,0,.35); border-top: 8px solid var(--red);
+  }
+  h1 { margin:0 0 4px; color:var(--red); font-size:2rem; }
+  .sub { margin:0 0 24px; color:#6b5646; font-style:italic; }
+  input, button, select { font: inherit; }
+  input[type=password] {
+    width:100%; padding:12px 14px; border:2px solid #d9c8b0; border-radius:10px; margin-bottom:12px;
+  }
+  button {
+    width:100%; padding:12px 16px; border:0; border-radius:10px; cursor:pointer;
+    background:var(--red); color:#fff; font-size:1.05rem;
+  }
+  button.secondary { background:transparent; color:var(--green); border:2px solid var(--green); }
+  button:disabled { opacity:.5; cursor:default; }
+  .grid { display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:8px; }
+  .grid button { background:var(--green); }
+  .err { color:var(--red); min-height:1.3em; margin:4px 0 0; }
+  .hidden { display:none; }
+  .drum {
+    font-size:2.4rem; font-weight:bold; color:var(--green); min-height:3.2rem; margin:18px 0;
+  }
+  .drum.final { color:var(--red); animation: pop .5s ease; }
+  @keyframes pop { 0%{transform:scale(.6)} 70%{transform:scale(1.15)} 100%{transform:scale(1)} }
+  .gift { font-size:3rem; }
+  .row { display:flex; gap:10px; }
+  .row button { flex:1; }
+  .note { font-size:.85rem; color:#7a6555; margin-top:18px; }
+</style>
+</head>
+<body>
+<div class="snow" id="snow"></div>
+
+<div class="card">
+  <div class="gift">🎁</div>
+  <h1>Secret Santa 2026</h1>
+
+  <!-- Step 1: password -->
+  <section id="s-login">
+    <p class="sub">Enter the family password</p>
+    <form id="login-form">
+      <input type="password" id="pw" placeholder="Password" autocomplete="current-password" autofocus>
+      <button type="submit" id="login-btn">Enter</button>
+      <p class="err" id="login-err"></p>
+    </form>
+  </section>
+
+  <!-- Step 2: who are you -->
+  <section id="s-pick" class="hidden">
+    <p class="sub">Who are you?</p>
+    <div class="grid" id="names"></div>
+    <p class="note">Pick only your own name — no peeking at others! 🤫</p>
+  </section>
+
+  <!-- Step 3: confirm -->
+  <section id="s-confirm" class="hidden">
+    <p class="sub">Are you really <strong id="confirm-name"></strong>?</p>
+    <div class="row">
+      <button class="secondary" id="back-btn">Back</button>
+      <button id="draw-btn">Draw my name!</button>
+    </div>
+  </section>
+
+  <!-- Step 4: draw -->
+  <section id="s-draw" class="hidden">
+    <p class="sub" id="draw-title"></p>
+    <div class="drum" id="drum">…</div>
+    <p id="draw-msg" class="hidden">Keep it secret! 🤐</p>
+    <button class="secondary hidden" id="done-btn">Done — hide it</button>
+  </section>
+</div>
+
+<script>
+const DATA = /*__PAYLOAD__*/null;
+const $ = id => document.getElementById(id);
+const enc = new TextEncoder();
+let hmacKey = null, me = null;
+
+function show(id) {
+  for (const s of ["s-login","s-pick","s-confirm","s-draw"]) $(s).classList.toggle("hidden", s !== id);
+}
+const hex = buf => [...new Uint8Array(buf)].map(b => b.toString(16).padStart(2,"0")).join("");
+const unhex = h => new Uint8Array(h.match(/../g).map(x => parseInt(x,16)));
+
+async function unlock(password) {
+  const base = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveBits"]);
+  const bits = await crypto.subtle.deriveBits(
+    { name:"PBKDF2", salt: unhex(DATA.salt), iterations: DATA.iterations, hash:"SHA-256" }, base, 256);
+  const key = await crypto.subtle.importKey("raw", bits, { name:"HMAC", hash:"SHA-256" }, false, ["sign"]);
+  const check = hex(await crypto.subtle.sign("HMAC", key, enc.encode("check")));
+  return check === DATA.check ? key : null;
+}
+
+async function receiverFor(giver) {
+  const ks = new Uint8Array(await crypto.subtle.sign("HMAC", hmacKey, enc.encode("pair:" + giver)));
+  const data = unhex(DATA.pairs[giver]);
+  return new TextDecoder().decode(data.map((b, i) => b ^ ks[i])).trim();
+}
+
+$("login-form").addEventListener("submit", async e => {
+  e.preventDefault();
+  $("login-btn").disabled = true; $("login-err").textContent = "Checking…";
+  try {
+    hmacKey = await unlock($("pw").value);
+  } catch (err) { hmacKey = null; }
+  $("login-btn").disabled = false;
+  if (!hmacKey) { $("login-err").textContent = "Wrong password, try again."; return; }
+  $("login-err").textContent = "";
+  $("pw").value = "";
+  show("s-pick");
+});
+
+for (const name of DATA.people) {
+  const b = document.createElement("button");
+  b.textContent = name;
+  b.onclick = () => { me = name; $("confirm-name").textContent = name; show("s-confirm"); };
+  $("names").appendChild(b);
+}
+$("back-btn").onclick = () => show("s-pick");
+
+$("draw-btn").onclick = async () => {
+  const target = await receiverFor(me);
+  show("s-draw");
+  $("draw-title").textContent = me + ", you will give a gift to…";
+  $("drum").classList.remove("final");
+  $("draw-msg").classList.add("hidden"); $("done-btn").classList.add("hidden");
+  const others = DATA.people.filter(p => p !== me);
+  let i = 0, delay = 60;
+  const spin = () => {
+    $("drum").textContent = others[i++ % others.length];
+    delay *= 1.12;
+    if (delay < 450) setTimeout(spin, delay);
+    else {
+      $("drum").textContent = target;
+      $("drum").classList.add("final");
+      $("draw-msg").classList.remove("hidden"); $("done-btn").classList.remove("hidden");
+    }
+  };
+  spin();
+};
+
+$("done-btn").onclick = () => { me = null; $("drum").textContent = "…"; show("s-pick"); };
+
+// snowflakes
+for (let i = 0; i < 30; i++) {
+  const s = document.createElement("span");
+  s.textContent = "❄";
+  s.style.left = Math.random() * 100 + "vw";
+  s.style.fontSize = (8 + Math.random() * 14) + "px";
+  s.style.animationDuration = (6 + Math.random() * 10) + "s";
+  s.style.animationDelay = (-Math.random() * 15) + "s";
+  $("snow").appendChild(s);
+}
+</script>
+</body>
+</html>
